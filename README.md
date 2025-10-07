@@ -35,9 +35,9 @@ The system consists of the following modules:
 flowchart TD
     A[User Query Input] --> B[Language Detection]
     B --> C{Query Language?}
-    C -->|English| D[Semantic Retrieval (Hindi)]
-    C -->|Hindi| E[Semantic Retrieval (English)]
+    C -->|English| D[Semantic Retrieval - Hindi]
+    C -->|Hindi| E[Semantic Retrieval - English]
     D --> F[Lexical BM25 Scoring]
-    E --> F[Lexical BM25 Scoring]
+    E --> F
     F --> G[Hybrid Ranking & Top-K Results]
     G --> H[Display Results in Web Interface]
