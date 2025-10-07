@@ -1,0 +1,114 @@
+# ============================================================================
+# BIDIRECTIONAL CROSS-LINGUAL INFORMATION RETRIEVAL (English ↔ Hindi)
+# Using Sentence Transformers (LaBSE) + optional BM25
+# ============================================================================
+
+# STEP 1: Install packages
+!pip install sentence-transformers rank-bm25 langdetect -q
+
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+from rank_bm25 import BM25Okapi
+from langdetect import detect
+
+# ============================================================================
+# STEP 2: Load dataset (limited for demo)
+# ============================================================================
+EN_FILE = '/content/IITB.en-hi.en'
+HI_FILE = '/content/IITB.en-hi.hi'
+MAX_LINES = 10000  # can increase to 50k sentences
+
+def load_file(path, max_lines=MAX_LINES, encodings=['utf-8','latin-1','cp1252']):
+    for enc in encodings:
+        try:
+            with open(path, 'r', encoding=enc, errors='ignore') as f:
+                lines = [line.strip() for line in f if line.strip()]
+            print(f"✅ Loaded {path} with encoding {enc}")
+            return lines[:max_lines]
+        except Exception as e:
+            print(f"❌ Failed with encoding {enc}: {e}")
+    raise ValueError(f"Cannot read {path} with given encodings")
+
+english_texts = load_file(EN_FILE)
+hindi_texts = load_file(HI_FILE)
+print(f"📄 Loaded {len(english_texts)} sentence pairs.")
+
+# ============================================================================
+# STEP 3: Initialize Sentence Transformer
+# ============================================================================
+model = SentenceTransformer('sentence-transformers/LaBSE')  # best for cross-lingual
+
+# ============================================================================
+# STEP 4: Encode sentences
+# ============================================================================
+print("Encoding English sentences...")
+english_embeddings = model.encode(english_texts, convert_to_numpy=True, show_progress_bar=True)
+
+print("Encoding Hindi sentences...")
+hindi_embeddings = model.encode(hindi_texts, convert_to_numpy=True, show_progress_bar=True)
+
+# ============================================================================
+# STEP 5: Optional BM25 for hybrid retrieval
+# ============================================================================
+def tokenize(texts):
+    return [text.lower().split() for text in texts]
+
+tokenized_english = tokenize(english_texts)
+tokenized_hindi = tokenize(hindi_texts)
+
+bm25_english = BM25Okapi(tokenized_english)
+bm25_hindi = BM25Okapi(tokenized_hindi)
+
+# ============================================================================
+# STEP 6: Retrieval functions
+# ============================================================================
+def retrieve_hindi(query, top_k=5, alpha=0.5):
+    """English query -> Hindi results"""
+    # BM25 score
+    bm25_score = bm25_hindi.get_scores(query.lower().split())
+    # Embedding score
+    query_emb = model.encode([query], convert_to_numpy=True)
+    cos_score = cosine_similarity(query_emb, hindi_embeddings)[0]
+    # Hybrid score
+    hybrid = alpha * bm25_score + (1-alpha) * cos_score
+    top_idx = hybrid.argsort()[-top_k:][::-1]
+    for idx in top_idx:
+        print(hindi_texts[idx])
+
+def retrieve_english(query, top_k=5, alpha=0.5):
+    """Hindi query -> English results"""
+    # BM25 score
+    bm25_score = bm25_english.get_scores(query.lower().split())
+    # Embedding score
+    query_emb = model.encode([query], convert_to_numpy=True)
+    cos_score = cosine_similarity(query_emb, english_embeddings)[0]
+    # Hybrid score
+    hybrid = alpha * bm25_score + (1-alpha) * cos_score
+    top_idx = hybrid.argsort()[-top_k:][::-1]
+    for idx in top_idx:
+        print(english_texts[idx])
+
+# ============================================================================
+# STEP 7: Automatic detection & bidirectional retrieval
+# ============================================================================
+def retrieve(query, top_k=5, alpha=0.5):
+    lang = detect(query)
+    if lang == 'hi':
+        print(f"🔹 Detected Hindi query. Retrieving English results...")
+        retrieve_english(query, top_k=top_k, alpha=alpha)
+    else:
+        print(f"🔹 Detected English query. Retrieving Hindi results...")
+        retrieve_hindi(query, top_k=top_k, alpha=alpha)
+
+# ============================================================================
+# STEP 8: Test
+# ============================================================================
+query1 = "What is aIr"
+query2 = "कृत्रिम बुद्धिमत्ता क्या है?"
+
+print("---- English Query ----")
+retrieve(query1, top_k=5)
+
+print("\n---- Hindi Query ----")
+retrieve(query2, top_k=5)
